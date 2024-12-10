@@ -1,0 +1,558 @@
+---
+title: "FINAL PROJECT"
+output: html_notebook
+---
+
+Dataset 3.8: CO2 data (name of the file CO2.csv)
+
+Willaey Kalisto                   10987637
+Leonard Nader                     11030544
+Barbui Andrea                     10728562
+Croci Federico                    10731153
+
+
+
+Human emissions of carbon dioxide and other greenhouse gases – are a primary driver of climate change – and present one of the world’s most pressing challenges.
+
+https://ourworldindata.org/co2-and-other-greenhouse-gas-emissions
+
+Some data possibly related to C02 emissions, have been extracted from 
+
+https://ourworldindata.org.
+
+Data have been selected for various nations and various years. 
+
+
+Consider a regression model to explain C02 emission with the other variables. 
+You can transform some of the variables. 
+Additional questions: C02 and GDP are strongly dependent? 
+Historically, CO2 emissions have been strongly correlated with how much money we have. This is particularly true at low-to-middle incomes. The richer we are, the more CO2 we emit. This is because we use more energy – which often comes from burning fossil fuels. 
+ This relationship is stil true  at higher incomes? 
+In addition you can: consider and compare various years. Consider the time as a covariate. Add more covariates (taking  them from the web). 
+Consider time series models. 
+
+ 
+
+```{r}
+rm(list=ls())
+CO2 <- read.csv("data/CO2.csv")
+head(CO2)
+plot(CO2$GDP,CO2$co2percap,xlab="GDP",ylab="CO2emission")
+CO2bis=CO2[,(3:9)]
+LM =lm(co2percap~.,data=CO2bis)
+summary(LM)
+q=quantile(CO2$GDP,0.65)
+plot(CO2$GDP[CO2$GDP>q],CO2$co2percap[CO2$GDP>q],xlab="GDP",ylab="CO2emission")
+```
+
+### Data analysis
+```{r}
+# Load necessary libraries
+library(Metrics)
+library(BAS)
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(GGally)
+library(dplyr)
+library(moments)
+library(fastDummies)
+library(broom)
+library(gridExtra)
+
+# Load the dataset
+co2_data <- read.csv("data/CO2.csv")
+# Remove first column x
+co2_data <- co2_data[, -(1)]
+c = ncol(co2_data)
+
+# Inspection of the dataset
+str(co2_data)
+summary(co2_data)
+```
+
+```{r}
+# Function to generate plots from CO2 data
+plot_co2_data <- function(co2_data) {
+  
+  # Scatter plots
+  p1 <- ggpairs(co2_data,
+                columns = c('co2percap', 'EnergyUse', 'GDP', 'pop', 'Lowcarbon_energy', 'urb', 'internet'),
+                columnLabels = c('co2percap', 'EnergyUse', 'GDP', 'pop', 'Lowcarbon_energy', 'urb', 'internet'),
+                aes(alpha = 0.5))
+  
+  # Correlation plot
+  corr_matrix <- cor(co2_data %>% select(c('co2percap', 'EnergyUse', 'GDP', 'pop', 'Lowcarbon_energy', 'urb', 'internet')), use = "complete.obs")
+  corrplot(corr_matrix, method = "color", addCoef.col = "black")
+  
+  # Select the numeric columns for boxplots
+  df_numeric <- co2_data[, c('co2percap', 'EnergyUse', 'GDP', 'pop', 'Lowcarbon_energy', 'urb', 'internet')]
+  
+  # Center and normalize the numeric data
+  df_centered <- as.data.frame(scale(df_numeric, scale = FALSE))
+  df_normalized <- as.data.frame(scale(df_numeric, scale = TRUE))
+  
+  # Boxplot for centered numeric columns
+  boxp_centered <- ggplot(stack(df_centered), aes(x = ind, y = values)) + 
+    geom_boxplot(fill = terrain.colors(7)) +
+    labs(title = "Boxplot of Numeric Variables (Mean Centered)",
+         x = "Variables",
+         y = "Values")
+  
+  # Boxplot for normalized numeric columns
+  boxp_normalized <- ggplot(stack(df_normalized), aes(x = ind, y = values)) + 
+    geom_boxplot(fill = terrain.colors(7)) +
+    labs(title = "Boxplot of Numeric Variables (Normalized)",
+         x = "Variables",
+         y = "Values")
+  
+  # Scatter plot of CO2 emissions vs GDP per capita
+  plot_gdp_co2 <- ggplot(co2_data, aes(x = GDP, y = co2percap)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", col = "blue") +
+    labs(title = "CO2 Emissions vs GDP per Capita",
+         x = "GDP per Capita (constant 2017 international $)",
+         y = "Annual CO2 Emissions (per capita)")
+  
+  # Print correlation between CO2 and GDP
+  cor_co2_gdp <- cor(co2_data$GDP, co2_data$co2percap, method = "pearson")
+  print(paste("Correlation between CO2 and GDP: ", cor_co2_gdp))
+  
+  # Display the plots
+  print(p1)
+  print(boxp_centered)
+  print(boxp_normalized)
+  print(plot_gdp_co2)
+  
+}
+
+plot_co2_data(co2_data)
+```
+
+# Data analysis
+
+```{r}
+# Apply log transformation to variables which have high numbers
+co2_data$pop = log(co2_data$pop)              
+co2_data$internet = log(co2_data$internet)    
+co2_data$EnergyUse = log(co2_data$EnergyUse)  
+co2_data$GDP = log(co2_data$GDP)              
+
+# Create dummy variables for 'country' and 'y' 
+co2_data <- dummy_cols(co2_data, select_columns = c("y"), remove_first_dummy = TRUE, remove_selected_columns = TRUE) #`bas.lm` automatically operates the transformation of "country" for us.
+
+# Print the size and column names of the updated data
+data_size <- dim(co2_data)
+data_col <- colnames(co2_data)
+print(data_size)
+print(data_col)
+
+plot_co2_data(co2_data)
+```
+co2percap exhibit a strong positive correlation with EnergyUse (0.81) and with GDP (0.62), moreover it shows a moderate positive correlation with urb (0.4) and a moderate negative correlation with pop (-0.38). Lowcarbon_energy and internet seems to be very few correlated with the target variable.
+
+### Variable transformations
+
+```{r}
+# Relevant variables
+terms <- c('EnergyUse', 'GDP', 'pop', 'urb', 'internet', 'Lowcarbon_energy')
+target_var <- "co2percap"
+
+# Function to generate interaction terms and store in a new matrix
+generate_interactions <- function(data, terms) {
+  interactions <- data.frame(co2percap = data$co2percap)  # Initialize with co2percap column
+  for (i in 1:(length(terms)-1)) {
+    for (j in (i+1):length(terms)) {
+      term1 <- terms[i]
+      term2 <- terms[j]
+      interaction_term <- paste(term1, term2, sep = "_x_")
+      # Create new column with interaction term
+      interactions[[interaction_term]] <- data[[term1]] * data[[term2]]
+    }
+  }
+  return(interactions)
+}
+
+# Function to generate polynomial terms and store in a new matrix
+generate_polynomials <- function(data, terms, degrees = c(2, 3)) {
+  polynomials <- data.frame(co2percap = data$co2percap)  # Initialize with co2percap column
+  for (term in terms) {
+    for (d in degrees) {
+      poly_term <- paste(term, "_poly_", d, sep = "")
+      # Create new column with polynomial term
+      polynomials[[poly_term]] <- data[[term]]^d
+    }
+  }
+  return(polynomials)
+}
+
+# Generate interaction and polynomial terms
+interaction_results <- generate_interactions(co2_data, terms)
+polynomial_results <- generate_polynomials(co2_data, terms)
+
+# Function to evaluate BIC and select the top 5 variables
+evaluate_bic <- function(data, target_var) {
+  # Model selection with BIC
+  model <- bas.lm(as.formula(paste(target_var, "~ .")), data = data, prior = "BIC", modelprior = uniform())
+  # Get the log marginal likelihood and order models
+  logmarg <- model$logmarg
+  top_models <- order(logmarg, decreasing = TRUE)[1:5]
+  print("Top models:")
+  print(top_models)
+  
+  selected_vars <- unique(unlist(model$which[top_models]))  # it gives back only which variable is present in the top 5 models (not the combination of the variables), it is useful to access which are the most meaningful variable transformations
+  print("Selected variables (indices):")
+  print(selected_vars)
+  
+  best.co2 = coefficients(model, estimator = "HPM")
+  print(best.co2)
+  
+  # Get the names of the selected variables and their posterior probabilities
+  top_variables <- model$namesx[selected_vars]
+  top_postprobs <- model$postprobs[top_models]
+  top_logmarg <- model$logmarg[top_models]
+  
+  # Visualize the selected variables:
+#image(model, rotate = F)
+  return(list(top_variables = top_variables, top_postprobs = top_postprobs, top_logmarg = top_logmarg))
+}
+
+# Evaluate BIC and select the top 5 variables for interaction and polynomial results
+interaction_results_eval <- evaluate_bic(interaction_results, target_var)
+polynomial_results_eval <- evaluate_bic(polynomial_results, target_var)
+
+# Print the selected variables and their posterior probabilities
+print("Top 5 Interaction Variables:")
+print(interaction_results_eval$top_variables[1:5])
+print("Posterior Probabilities:")
+print(interaction_results_eval$top_postprobs[1:5])
+print("logmarg:")
+print(interaction_results_eval$top_logmarg[1:5])
+
+print("Top 5 Polynomial Variables:")
+print(polynomial_results_eval$top_variables[1:5])
+print("Posterior Probabilities:")
+print(polynomial_results_eval$top_postprobs[1:5])
+print("logmarg:")
+print(polynomial_results_eval$top_logmarg[1:5])
+```
+The best interaction variables, as it can be seen, include always EnergyUse. It is reasonable since EnergyUse is the most correlated variable with co2percap.
+
+# Adding the new features in the following analyses
+
+```{r}
+# Add selected interaction and polynomial variables to co2_data, '2' since the intercept is excluded
+co2_data <- cbind(co2_data,
+                  interaction_results[, interaction_results_eval$top_variables[2:5]],
+                  polynomial_results[, polynomial_results_eval$top_variables[2:5]])
+
+create_new_matrix <- function(original_matrix, column_indices) {
+  new_matrix <- original_matrix[, column_indices]
+  return(new_matrix)
+}
+selected_columns <- c(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+co2_data0 <- create_new_matrix(co2_data, selected_columns)
+```
+
+### BIC
+
+```{r}
+# For this analysis we do not include country since it is extremely costly
+
+# Fit the model using BIC
+co2.BIC <- bas.lm(co2percap ~ ., data = co2_data0, prior = "BIC", modelprior = uniform())
+print(round(summary(co2.BIC), 3))
+image(co2.BIC, rotate = FALSE)
+
+# Find the index of the model with the lowest `logmarg`
+best <- which.max(co2.BIC$logmarg)
+# Retrieve the index of variables in the best model, assuming 0 is the intercept index
+best_model_indices <- co2.BIC$which[[best]] + 1
+
+# Print selected variables in the best model
+print(co2.BIC$namesx[best_model_indices])
+
+# Create a vector containing the variables used in best model
+best.mod <- rep(0, length(co2.BIC$namesx))  # Initialize vector with zeros
+best.mod[best_model_indices] <- 1
+
+# Fit again the model using BIC and impose the variables to use with bestmodel = best.mod
+co2.bestBIC <- bas.lm(co2percap ~ ., data = co2_data0, prior = "BIC", modelprior = uniform(), n.models = 1, bestmodel = best.mod)
+
+# Retrieve coefficients information
+co2.coef <- coef(co2.bestBIC)
+print(round(summary(co2.bestBIC), 3))
+
+# Summary statistics
+coef.BIC <- cbind(
+  "2.5%" = round(confint(co2.coef)[, 1], 3), # It extracts the first column of the credible intervals matrix, which contains the lower bounds of the intervals for each coefficient
+  "97.5%" = round(confint(co2.coef)[, 2], 3), # It extracts the second column of the credible intervals matrix, which contains the upper bounds of the intervals for each coefficient
+  "post mean" = round(co2.coef$postmean, 3),
+  "post sd" = round(co2.coef$postsd, 3)
+)
+print(coef.BIC)
+
+# Plot confidence intervals for coefficients of the best BIC model
+plot(confint(coef(co2.bestBIC)), main = "Best BIC model", cey.axis = 0.6, cex.main = 0.8)
+
+# Plot coefficients of the best model excluding the intercept
+par(mfrow = c(1, 2))
+plot(co2.coef, subset = (best_model_indices)[-1], ask = FALSE)
+
+# create a new matrix with the best predictors, we will use only them in the following analyses to avoid multicollinearity problem
+selected_columns <- c(1, 2, 4, 5, 7, 12, 13, 15, 16, 17)
+co2_data1 <- create_new_matrix(co2_data0, selected_columns)
+```
+As it can be seen the most effective covariates are: EnergyUse, GDP, Lowcarbon_energy, urb, EnergyUse_x_GDP, EnergyUse_x_urb, EnergyUse_x_Lowcarbon_energy, EnergyUse_poly_2, GDP_poly_2. 
+
+### Bayesian regression using BAS --> informative G-prior
+
+```{r}
+r <- nrow(co2_data)
+
+for (alpha in c(0.1, 1, 10, 30, 50, 100, 200, r)) {
+  co2g <- bas.lm(co2percap ~ ., data = co2_data1, prior = "g-prior", alpha = alpha, modelprior = Bernoulli(1), include.always = ~ ., n.models = 1)
+  beta <- coef(co2g)
+  if (alpha == 100) {
+    beta_alpha_100 <- beta
+    print(beta_alpha_100)
+    plot(beta_alpha_100, ask = F)
+  }
+  conf_intervals <- confint(beta)
+  plot(conf_intervals, main = paste("g-prior alpha=", alpha), las = 2, cex.axis = 0.7, cex.main = 0.8)
+}
+
+```
+alpha = 0.1 is quite an extreme hypotesis thus it differs from the other alphas.
+it is interesting to notice that with alpha = 1 and alpha = 364 we do not have great changes (robustness check).
+The probability of the covariates to belong to the model is always 1 since we are considering only one model.
+
+### Bayesian regression using BAS --> JZS-prior
+
+```{r}
+co2JZS1 = bas.lm(co2percap ~ ., data =  co2_data1, prior="JZS", modelprior = Bernoulli(1), include.always = ~ ., n.models = 1)
+betaJZS1 = coef(co2JZS1)
+print(betaJZS1)
+plot(betaJZS1, ask = F)
+confint(betaJZS1)
+plot(confint(betaJZS1),main="JZS-prior - subset without country", las = 2, cex.axis = 0.7, cex.main = 0.8)
+
+```
+the results are quite similar to the one with the g-prior. 
+
+### BMA
+
+```{r}
+# Fit the model
+model_BMA <- bas.lm(co2percap ~ ., data = co2_data1, prior = "JZS", alpha = 1, modelprior = uniform())
+# Save and print the coefficients summaries with BMA
+modelBMA_coef <- coefficients(model_BMA, estimator = "BMA")
+print(modelBMA_coef)
+```
+The posterior probability of each covariate to belong to the model is defined as a weighted average where the weights are the posterior probabilities for the models. The results are as we expetcted form the previous analyses.
+
+### Predictions
+
+```{r}
+# Set the seed for replication:
+set.seed(5)
+
+# We separate the dataset in a training set and a test set, following the 70%-30% split
+suffled_data = co2_data1[sample(x = 1:data_size[1] , size = data_size[1],replace = F),]  #in order to randomize the choice of training set and test set
+data_train = suffled_data[1:255,]     # with outliers 255, removing outliers 186
+data_test = suffled_data[256:data_size[1],]
+
+n <- floor(30 * nrow(co2_data) / 100) # not round since employing it we will have problems with 79.5 
+```
+
+# G-Prior predictions
+
+```{r}
+# We execute Bayesian Linear regression over the training set with the G prior and use obtained model to predict the value in the test set
+
+alpha = 100
+co2.basg = bas.lm(co2percap ~ ., data=data_train, prior="g-prior", alpha=alpha, modelprior=Bernoulli(1))
+betag = coef(co2.basg)
+
+fittedg<-predict(co2.basg, estimator = "BMA")
+prednewg <- predict(co2.basg,newdata=data_test, estimator = "BMA")
+
+plot(fittedg$Ypred[1:length(fittedg$Ypred)], data_train$co2percap[1:length(fittedg$Ypred)],pch = 16, xlab = expression(hat(mu[i])), ylab = 'Y', type="p")
+points(prednewg$Ypred, data_test$co2percap, pch = 16, col="red" ,type="p")
+abline(0, 1)
+
+BPMg <- predict(co2.basg, estimator = "BPM", newdata=data_test,se.fit = TRUE)
+conf.fitg <- confint(BPMg, parm = "mean")
+conf.predg <- confint(BPMg, parm = "pred")
+
+plot(conf.predg, main="Out of sample: pred. (black) vs true (red) - g-prior")
+points(seq(1:n), data_test$co2percap, col="red")
+
+mseg = mse(conf.fitg, data_test$co2percap)
+rmseg = rmse(conf.fitg, data_test$co2percap)
+maeg = mae(conf.fitg, data_test$co2percap)
+mapeg = mape(conf.fitg, data_test$co2percap)
+print(paste("Mean Squared Error: ",mseg))
+print(paste("Root Mean Square Error: ",rmseg))
+print(paste("Mean Absolute Error: ",maeg))
+print(paste("Mean Absolute Percentage Error: ",mapeg*100))
+```
+With variable transformations the prediction has been improved leading to a better fit, except for some values which may be outliers.
+
+# JZS Prior predictions
+
+```{r}
+# We execute Bayesian Linear regression over the training set with the JZS prior and use obtained model to predict the value in the test set
+
+co2.basJSZ = bas.lm(co2percap ~ ., data = data_train, prior = "JZS", alpha = 1, modelprior = uniform(), include.always = ~ ., n.models = 1)
+betaJSZ = coef(co2.basJSZ)
+
+# Predict for training data
+fittedJSZ <- predict(co2.basJSZ, newdata = data_train, estimator = "BMA")
+# Predict for test data
+prednewJSZ <- predict(co2.basJSZ, newdata = data_test, estimator = "BMA")
+
+plot(fittedJSZ$Ypred[1:length(fittedJSZ$Ypred)], data_train$co2percap[1:length(fittedJSZ$Ypred)],pch = 16, xlab = expression(hat(mu[i])), ylab = 'Y', type="p")
+points(prednewJSZ$Ypred, data_test$co2percap, pch = 16, col="red" ,type="p")
+abline(0, 1)
+
+BPMJSZ <- predict(co2.basJSZ, estimator = "BPM", newdata=data_test,se.fit = TRUE)
+conf.fitJSZ <- confint(BPMJSZ, parm = "mean")
+conf.predJSZ <- confint(BPMJSZ, parm = "pred")
+
+plot(conf.predJSZ, main="Out of sample: pred. (black) vs true (red) - JSZ-prior")
+points(seq(1:n), data_test$co2percap, col="red")
+
+mseJSZ = mse(conf.fitJSZ, data_test$co2percap)
+rmseJSZ = rmse(conf.fitJSZ, data_test$co2percap)
+maeJSZ = mae(conf.fitJSZ, data_test$co2percap)
+mapeJSZ = mape(conf.fitJSZ, data_test$co2percap)
+print(paste("Mean Squared Error: ",mseJSZ))
+print(paste("Root Mean Square Error: ",rmseJSZ))
+print(paste("Mean Absolute Error: ",maeJSZ))
+print(paste("Mean Absolute Percentage Error: ",mapeJSZ*100))
+```
+Also with the JZS Prior the performances of the model has been increased.
+
+### BIC
+
+```{r}
+# We execute Bayesian Linear regression over the training set with the parameter of the best BIC model and use the obtained model to predict the value in the test set
+
+co2.bestBIC = bas.lm(co2percap ~ ., data = data_train, prior = "BIC",
+                     modelprior=uniform(), n.models=1, bestmodel=best.mod)
+beta = coef(co2.bestBIC)
+
+fittedBIC<-predict(co2.bestBIC, estimator = "HPM")
+prednewBIC <- predict(co2.bestBIC,newdata=data_test, estimator = "HPM", se.fit=TRUE)
+
+plot(fittedBIC$Ypred[1:length(fittedBIC$Ypred)], data_train$co2percap[1:length(fittedBIC$Ypred)],pch = 16, xlab = expression(hat(mu[i])), ylab = 'Y', type="p")
+points(prednewBIC$Ypred, data_test$co2percap, pch = 16, col="red" ,type="p")
+abline(0, 1)
+
+HPMBIC <- predict(co2.bestBIC, estimator = "HPM", newdata=data_test,se.fit = TRUE)
+conf.fitBIC <- confint(HPMBIC, parm = "mean")
+conf.predBIC <- confint(HPMBIC, parm = "pred")
+
+plot(conf.predBIC, main="Out of sample: pred. (black) vs true (red) - JSZ-prior")
+points(seq(1:n), data_test$co2percap, col="red")
+
+mseBIC = mse(conf.fitBIC, data_test$co2percap)
+rmseBIC = rmse(conf.fitBIC, data_test$co2percap)
+maeBIC = mae(conf.fitBIC, data_test$co2percap)
+mapeBIC = mape(conf.fitBIC, data_test$co2percap)
+print(paste("Mean Squared Error: ",mseBIC))
+print(paste("Root Mean Square Error: ",rmseBIC))
+print(paste("Mean Absolute Error: ",maeBIC))
+print(paste("Mean Absolute Percentage Error: ",mapeBIC*100))  
+
+```
+In this case we are still far from a good fitting, that's could be due to the fact that we are using a non informative prior (uniform prior) and we are not using all the possible models as in the BMA case, but just the best.
+
+### Relationship between CO2 and GDP
+
+```{r}
+# Initial correlation analysis
+overall_cor <- cor(co2_data1$GDP, co2_data1$co2percap, method = "pearson")
+print(paste("Overall correlation between GDP and CO2 emissions per capita:", round(overall_cor, 2)))
+
+# Visualize the overall relationship
+ggplot(co2_data1, aes(x = GDP, y = co2percap)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(title = "Overall Relationship Between GDP and CO2 Emissions per Capita",
+       x = "GDP", y = "CO2 Emissions per Capita") +
+  theme_minimal()
+
+# Split data into low income and high-income groups
+gdp_50th <- quantile(co2_data1$GDP, 0.50) # median of the GDP
+
+low_income <- co2_data1 %>% filter(GDP <= gdp_50th)
+high_income <- co2_data1 %>% filter(GDP > gdp_50th)
+
+# Correlation analysis for low income group
+low_cor <- cor(low_income$GDP, low_income$co2percap, method = "pearson")
+print(paste("Correlation between GDP and CO2 emissions per capita for low income group:", round(low_cor, 2)))
+
+# Correlation analysis for high-income group
+high_income_cor <- cor(high_income$GDP, high_income$co2percap, method = "pearson")
+print(paste("Correlation between GDP and CO2 emissions per capita for high-income group:", round(high_income_cor, 2)))
+
+# Visualize the relationship for low income group
+p1 <- ggplot(low_income, aes(x = GDP, y = co2percap)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "lm", color = "darkblue") +
+  labs(title = "Low Income",
+       x = "GDP", y = "CO2 Emissions per Capita") +
+  theme_minimal()
+
+# Visualize the relationship for high-income group
+p2 <- ggplot(high_income, aes(x = GDP, y = co2percap)) +
+  geom_point(alpha = 0.5, color = "red") +
+  geom_smooth(method = "lm", color = "darkred") +
+  labs(title = "High Income",
+       x = "GDP", y = "CO2 Emissions per Capita") +
+  theme_minimal()
+
+# Combine plots for comparison
+grid.arrange(p1, p2, ncol = 2, top = "Comparison of GDP vs CO2 Emissions per Capita")
+
+# Plot GDP vs CO2 emissions with a focus on high-income countries
+high_income_threshold <- quantile(co2_data1$GDP, 0.75)  # Adjust threshold as needed
+high_income_data <- co2_data1 %>% filter(GDP > high_income_threshold)
+
+ggplot(high_income_data, aes(x = GDP, y = co2percap)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "GDP vs CO2 Emission for High-Income Countries",
+       x = "GDP", y = "CO2 Emission")
+
+# exclude country in order to make the following analyses more clear
+low_income <- low_income[, -(1)]
+high_income <- high_income[, -(1)]
+
+```
+# regression using JZS-prior ---> low_income
+
+```{r}
+co2JZSl = bas.lm(co2percap ~ ., data =  low_income, prior="JZS", modelprior = Bernoulli(1), include.always = ~ ., n.models = 1)
+betaJZSl = coef(co2JZSl)
+betaJZSl
+plot(betaJZSl, ask = F)
+confint(betaJZSl)
+plot(confint(betaJZSl),main="JZS-prior - subset low_income", las = 2, cex.axis = 0.7, cex.main = 0.8)
+```
+Performing again the regression with the JZS prior (the one with the best performances) we get that at low income the GDP has a great impact in fitting the model since the centre of the posterior distribution of its beta is very far from zero. Moreover it is interesting to notice that also GDP_poly_2 has a strong impact, but less than GDP.
+
+
+# regression using JZS-prior ---> high_income
+
+```{r}
+co2JZSh = bas.lm(co2percap ~ ., data =  co2_data1, prior="JZS", modelprior = Bernoulli(1), include.always = ~ ., n.models = 1)
+betaJZSh = coef(co2JZSh)
+betaJZSh
+plot(betaJZSh, ask = F)
+confint(betaJZSh)
+plot(confint(betaJZSh),main="JZS-prior - subset high_income", las = 2, cex.axis = 0.7, cex.main = 0.8)
+```
+The high income analysis shows a very similar result w.r.t. the low income case. However it can be noticed that in this case the centre of the posterior distribution of GDP's beta is closer to zero and GDP_poly_2 has a stronger impact in fitting the model.
